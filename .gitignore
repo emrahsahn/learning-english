@@ -32,6 +32,15 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# personal data and test artifacts
+/private-data/
+/public/pdf.worker.min.mjs
+/test-results/
+/playwright-report/
+/tests/e2e/.artifacts*/
+/tests/e2e/*results.json
 
 # vercel
 .vercel

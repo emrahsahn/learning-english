@@ -1,26 +1,229 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  color-scheme: light;
+  --background: #f8f7f3;
+  --foreground: #25263d;
+  --card: #fffefa;
+  --card-foreground: #25263d;
+  --popover: #fffefa;
+  --popover-foreground: #25263d;
+  --primary: #6152ce;
+  --primary-foreground: #ffffff;
+  --secondary: #eeeaf8;
+  --secondary-foreground: #5143a9;
+  --muted: #efeee8;
+  --muted-foreground: #6c6b7e;
+  --accent: #eeeaf8;
+  --accent-foreground: #5143a9;
+  --destructive: #c34552;
+  --border: #e8e6df;
+  --input: #dedbd4;
+  --ring: #8b7ce5;
+  --chart-1: #7565dc;
+  --chart-2: #71a598;
+  --chart-3: #d8ae67;
+  --chart-4: #aaa0e8;
+  --chart-5: #c9859e;
+  /* radix-nova cards use radius-xl: keep their corners at 20px. */
+  --radius: calc(20px / 1.4);
+  --sidebar: #fdfcf9;
+  --sidebar-foreground: #25263d;
+  --sidebar-primary: #6152ce;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eeebfb;
+  --sidebar-accent-foreground: #5a4abc;
+  --sidebar-border: #e8e6df;
+  --sidebar-ring: #8b7ce5;
+  --focus-grid: rgb(97 82 206 / 5%);
+  --focus-halo: rgb(167 151 238 / 20%);
+  --surface-shadow: 0 3px 18px -10px rgb(37 38 61 / 12%);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #131725;
+  --foreground: #f2f0f8;
+  --card: #1b2032;
+  --card-foreground: #f2f0f8;
+  --popover: #1e2437;
+  --popover-foreground: #f2f0f8;
+  --primary: #b4a5ff;
+  --primary-foreground: #211b42;
+  --secondary: #2a2743;
+  --secondary-foreground: #d6ccff;
+  --muted: #23293b;
+  --muted-foreground: #a6aabd;
+  --accent: #2c2949;
+  --accent-foreground: #ded5ff;
+  --destructive: #fb8794;
+  --border: #2b3145;
+  --input: #353c53;
+  --ring: #a597ed;
+  --chart-1: #b4a5ff;
+  --chart-2: #87c4b4;
+  --chart-3: #e1bc7e;
+  --chart-4: #8171ce;
+  --chart-5: #dea0b9;
+  --sidebar: #171b2b;
+  --sidebar-foreground: #f2f0f8;
+  --sidebar-primary: #b4a5ff;
+  --sidebar-primary-foreground: #211b42;
+  --sidebar-accent: #2c2949;
+  --sidebar-accent-foreground: #d6ccff;
+  --sidebar-border: #2b3145;
+  --sidebar-ring: #a597ed;
+  --focus-grid: rgb(180 165 255 / 5%);
+  --focus-halo: rgb(125 102 211 / 18%);
+  --surface-shadow: 0 3px 18px -10px rgb(0 0 0 / 35%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+    scroll-padding-top: 6rem;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01" on;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+    color: var(--foreground);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .page-title {
+    @apply font-heading text-foreground;
+    font-size: clamp(2rem, 3.4vw, 3rem);
+    font-weight: 500;
+    line-height: 1.12;
+    letter-spacing: -0.055em;
+    text-wrap: balance;
+  }
+
+  .page-subtitle {
+    @apply text-sm leading-relaxed text-muted-foreground;
+    max-width: 40rem;
+    text-wrap: pretty;
+  }
+
+  .eyebrow {
+    @apply text-muted-foreground;
+    font-size: 0.625rem;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .surface {
+    @apply border border-border bg-card text-card-foreground;
+    border-radius: 20px;
+    box-shadow: var(--surface-shadow);
+  }
+
+  .surface-hover {
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .surface-hover:hover {
+    border-color: color-mix(in srgb, var(--primary) 25%, var(--border));
+    box-shadow: 0 8px 24px -14px color-mix(in srgb, var(--primary) 25%, transparent);
+  }
+
+  .learning-focus {
+    background-color: var(--card);
+    background-image:
+      radial-gradient(ellipse at 85% 10%, var(--focus-halo), transparent 65%),
+      linear-gradient(var(--focus-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--focus-grid) 1px, transparent 1px);
+    background-size: 100% 100%, 32px 32px, 32px 32px;
+    background-position: center;
+  }
+
+  .animate-card {
+    animation: card-enter 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+}
+
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-card {
+    animation: none;
+  }
+
+  .surface-hover {
+    transition: none;
+  }
 }
