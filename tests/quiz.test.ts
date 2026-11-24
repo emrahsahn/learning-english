@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  acceptedTranslations, generateQuiz, getQuizAvailability, gradeAnswer,
+  acceptedTranslations, filterPoolWordIds, generateQuiz, getQuizAvailability, gradeAnswer,
   maskWord, matchingContext, normalizeEnglish, normalizeTurkish, QUESTION_TYPES,
-  type QuizConfig, type QuizQuestion,
+  QUIZ_POOL_LABELS, QUIZ_POOLS,
+  type QuizConfig, type QuizPool, type QuizQuestion,
 } from "../src/lib/quiz";
-import type { VocabularyWord } from "../src/types";
+import type { VocabularyWord, WordProgress } from "../src/types";
 
 function word(text: string, meaning = "", extra: Partial<VocabularyWord> = {}): VocabularyWord {
   return { id: text, word: text, turkishMeaning: meaning, cefrLevel: "A1", partOfSpeech: "noun", pronunciation: "", ...extra };
@@ -293,4 +294,152 @@ describe("availability and balanced, reproducible sessions", () => {
     expect(new Set(result.questions.map(q => q.wordId)).size).toBe(50);
     expect(performance.now() - start).toBeLessThan(5000);
   }, 10000);
+});
+
+function progressRecord(wordId: string, extra: Partial<WordProgress> = {}): WordProgress {
+  return {
+    wordId,
+    status: "new",
+    lastReviewDate: null,
+    nextReviewDate: null,
+    reviewCount: 0,
+    correctCount: 0,
+    incorrectCount: 0,
+    difficulty: 0.5,
+    confidence: 0,
+    easeFactor: 2.5,
+    intervalDays: 0,
+    repetitions: 0,
+    favorite: false,
+    ...extra,
+  };
+}
+
+describe("vocabulary pool filters", () => {
+  const now = new Date("2026-05-01T12:00:00.000Z");
+  const past = "2026-05-01T11:00:00.000Z";
+  const future = "2026-05-02T12:00:00.000Z";
+
+  const progressList: WordProgress[] = [
+    // apple: learning + due + favorite
+    progressRecord("apple", { status: "learning", nextReviewDate: past, reviewCount: 2, correctCount: 2, difficulty: 0.4, favorite: true }),
+    // book: learning + not due (future) + difficult via high difficulty with reviewCount > 0
+    progressRecord("book", { status: "learning", nextReviewDate: future, reviewCount: 2, correctCount: 2, difficulty: 0.55 }),
+    // chair: learned + due + difficult via incorrectCount > 0
+    progressRecord("chair", { status: "learned", nextReviewDate: past, reviewCount: 4, correctCount: 3, incorrectCount: 1, difficulty: 0.35 }),
+    // door: new + favorite only (no review yet, high difficulty should NOT trigger difficult because reviewCount === 0)
+    progressRecord("door", { status: "new", reviewCount: 0, difficulty: 0.8, favorite: true }),
+    // egg: learned + future + easy (not in learning, due, favorites, or difficult)
+    progressRecord("egg", { status: "learned", nextReviewDate: future, reviewCount: 5, correctCount: 5, difficulty: 0.2, favorite: false }),
+  ];
+
+  it("exports Turkish labels for every quiz pool", () => {
+    expect(QUIZ_POOLS).toEqual(["all", "learning", "due", "favorites", "difficult"]);
+    expect(QUIZ_POOL_LABELS).toEqual({
+      all: "Tüm kelimeler",
+      learning: "Öğreniliyor",
+      due: "Tekrar zamanı gelenler",
+      favorites: "Favorilerim",
+      difficult: "Zorlandıklarım",
+    });
+  });
+
+  it("classifies word IDs accurately for each pool", () => {
+    const expected: Record<QuizPool, string[]> = {
+      all: vocabulary.map(w => w.id),
+      learning: ["apple", "book"],
+      due: ["apple", "chair"],
+      favorites: ["apple", "door"],
+      difficult: ["book", "chair"],
+    };
+    for (const pool of QUIZ_POOLS) {
+      expect([...filterPoolWordIds(vocabulary, progressList, pool, now)].sort()).toEqual([...expected[pool]].sort());
+    }
+  });
+
+  it("filters availability and generated questions to the selected pool", () => {
+    const expectedIds: Record<QuizPool, string[]> = {
+      all: vocabulary.map(w => w.id),
+      learning: ["apple", "book"],
+      due: ["apple", "chair"],
+      favorites: ["apple", "door"],
+      difficult: ["book", "chair"],
+    };
+    for (const pool of QUIZ_POOLS) {
+      const filter = { level: "all" as const, pool, progress: progressList, now, listeningAvailable: true };
+      const availability = getQuizAvailability(vocabulary, filter);
+      expect(availability.mixed, pool).toBe(expectedIds[pool].length);
+      expect(availability["en-tr-choice"], pool).toBe(expectedIds[pool].length);
+      const result = generateQuiz(vocabulary, config({ ...filter, type: "mixed", length: 20 }));
+      expect(result.questions.map(q => q.wordId).sort(), pool).toEqual([...expectedIds[pool]].sort());
+    }
+  });
+
+  it("generates 4 unambiguous multiple-choice options using level distractors when a pool has only 1 word", () => {
+    const oneFavorite: WordProgress[] = [progressRecord("apple", { favorite: true })];
+    const filter = { level: "A1" as const, pool: "favorites" as const, progress: oneFavorite, now, listeningAvailable: false };
+    const availability = getQuizAvailability(vocabulary, filter);
+    expect(availability["en-tr-choice"]).toBe(1);
+    expect(availability["tr-en-choice"]).toBe(1);
+    expect(availability.sentence).toBe(1);
+    expect(availability.mixed).toBe(1);
+
+    for (const type of ["en-tr-choice", "tr-en-choice", "sentence"] as const) {
+      const result = generateQuiz(vocabulary, config({ ...filter, type, length: 5 }));
+      expect(result.questions, type).toHaveLength(1);
+      const q = result.questions[0];
+      expect(q.wordId, type).toBe("apple");
+      expect(q.options, type).toHaveLength(4);
+      expect(new Set(q.options!).size, type).toBe(4);
+      expect(q.options!.filter(option => gradeAnswer(q, option)), type).toHaveLength(1);
+    }
+  });
+
+  it("keeps distractors inside the selected CEFR level and refuses 3-option choices", () => {
+    const mixedLevels = [
+      ...vocabulary.slice(0, 3), // 3 A1 words (not enough for 4-choice)
+      word("advanced", "ileri", { cefrLevel: "B2", exampleSentence: "This is an advanced topic." }),
+      word("complex", "karmaşık", { cefrLevel: "B2", exampleSentence: "A complex system works." }),
+      word("modern", "çağdaş", { cefrLevel: "B2", exampleSentence: "A modern design helps." }),
+      word("unique", "benzersiz", { cefrLevel: "B2", exampleSentence: "Each case is unique." }),
+    ];
+    const oneA1Favorite = [progressRecord("apple", { favorite: true })];
+    const a1Filter = { level: "A1" as const, pool: "favorites" as const, progress: oneA1Favorite, now, listeningAvailable: false };
+    expect(getQuizAvailability(mixedLevels, a1Filter)["en-tr-choice"]).toBe(0);
+    expect(getQuizAvailability(mixedLevels, a1Filter)["tr-en-choice"]).toBe(0);
+    expect(getQuizAvailability(mixedLevels, a1Filter).sentence).toBe(0);
+    expect(getQuizAvailability(mixedLevels, a1Filter)["en-tr-write"]).toBe(1);
+
+    const oneB2Favorite = [progressRecord("advanced", { favorite: true })];
+    const b2Filter = { level: "B2" as const, pool: "favorites" as const, progress: oneB2Favorite, now, listeningAvailable: false };
+    const result = generateQuiz(mixedLevels, config({ ...b2Filter, type: "tr-en-choice", length: 5 }));
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0].word).toBe("advanced");
+    expect(new Set(result.questions[0].options)).toEqual(new Set(["advanced", "complex", "modern", "unique"]));
+  });
+
+  it("retains full-level written equivalents when targeting a filtered pool", () => {
+    const inputs = [
+      word("big", "büyük"),
+      word("large", "iri", { acceptedTranslations: ["büyük"] }),
+      word("small", "küçük"),
+      word("tiny", "minik"),
+    ];
+    const oneFavorite = [progressRecord("big", { favorite: true })];
+    const result = generateQuiz(inputs, config({
+      type: "tr-en-write", level: "A1", pool: "favorites", progress: oneFavorite, length: 5,
+    }));
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0].word).toBe("big");
+    expect(gradeAnswer(result.questions[0], "large")).toBe(true);
+  });
+
+  it("returns zero availability and zero questions cleanly when no words match the pool", () => {
+    const filter = { level: "all" as const, pool: "favorites" as const, progress: [], now, listeningAvailable: true };
+    const availability = getQuizAvailability(vocabulary, filter);
+    expect(availability.mixed).toBe(0);
+    for (const type of QUESTION_TYPES) expect(availability[type]).toBe(0);
+    const result = generateQuiz(vocabulary, config({ ...filter, length: 5 }));
+    expect(result.questions).toHaveLength(0);
+  });
 });

@@ -455,7 +455,7 @@ test("settings quota, level, quiz and speech preferences persist and invalid quo
   await page.getByLabel("Konuşma hızı").fill("0.75");
   await page.getByRole("button", { name: "Tercihleri kaydet" }).click();
   const expected = { id: "preferences", newWordsPerDay: 7, reviewsPerDay: 23,
-    quizLength: 5, preferredLevel: "A2", voiceAccent: "en-US", speechRate: 0.75 };
+    quizLength: 5, preferredLevel: "A2", voiceAccent: "en-US", speechRate: 0.75, autoSpeak: false };
   await expect.poll(async () => (await tables(page)).settings).toEqual([expected]);
   await page.reload();
   await expect(page.getByLabel("Günlük yeni kelime", { exact: true })).toHaveValue("7");

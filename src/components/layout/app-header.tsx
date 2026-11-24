@@ -4,8 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
-import { CalendarDays, ChevronRight, Loader2, LockKeyhole, Menu, Moon, Sun, X } from "lucide-react";
-import { toast } from "sonner";
+import { CalendarDays, ChevronRight, Menu, Moon, Sun, X } from "lucide-react";
 import { getWorkspaceRoute } from "@/components/layout/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Button } from "@/components/ui/button";
@@ -75,52 +74,6 @@ function ThemeToggle() {
   );
 }
 
-function LockWorkspace() {
-  const [isLocking, setIsLocking] = useState(false);
-
-  async function lock() {
-    if (isLocking) return;
-    setIsLocking(true);
-
-    try {
-      const response = await fetch("/api/lock", {
-        method: "POST",
-        credentials: "same-origin",
-      });
-      if (!response.ok) throw new Error("Lock request failed");
-      // Reload the document so no unlocked workspace remains in the router cache.
-      window.location.assign(new URL("/unlock", window.location.origin).href);
-    } catch {
-      toast.error("Çalışma alanı kilitlenemedi. Lütfen tekrar dene.");
-      setIsLocking(false);
-    }
-  }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={isLocking}
-          aria-busy={isLocking}
-          aria-label={isLocking ? "Çalışma alanı kilitleniyor" : "Çalışma alanını kilitle"}
-          className="h-10 gap-2 rounded-xl px-3 text-muted-foreground"
-          onClick={lock}
-        >
-          {isLocking ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <LockKeyhole className="size-4" strokeWidth={1.7} aria-hidden="true" />
-          )}
-          <span className="hidden text-xs sm:inline">{isLocking ? "Kilitleniyor…" : "Kilitle"}</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent sideOffset={8}>Çalışma alanını kilitle</TooltipContent>
-    </Tooltip>
-  );
-}
-
 export function AppHeader() {
   const pathname = usePathname();
   const route = getWorkspaceRoute(pathname);
@@ -162,7 +115,6 @@ export function AppHeader() {
           <HeaderDate />
           <span className="mx-2 hidden h-5 w-px bg-border md:block" aria-hidden="true" />
           <ThemeToggle />
-          <LockWorkspace />
         </div>
       </div>
     </header>

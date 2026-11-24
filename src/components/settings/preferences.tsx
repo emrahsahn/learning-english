@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { repository } from "@/lib/storage/repository";
 import { settingsSchema } from "@/lib/storage/schema";
 import { LEVELS, type Settings } from "@/types";
@@ -15,14 +16,16 @@ import { errorMessage, InlineError, SectionHeading, type RunOperation } from "./
 const selectClass = "h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50";
 
 export function Preferences({ settings, busy, runOperation }: { settings: Settings; busy: boolean; runOperation: RunOperation }) {
+  const initialAutoSpeak = settings.autoSpeak ?? false;
   const [draft, setDraft] = useState({
     newWordsPerDay: String(settings.newWordsPerDay), reviewsPerDay: String(settings.reviewsPerDay), quizLength: String(settings.quizLength),
     preferredLevel: settings.preferredLevel, voiceAccent: settings.voiceAccent, speechRate: String(settings.speechRate),
+    autoSpeak: initialAutoSpeak,
   });
   const [error, setError] = useState<string | null>(null);
   const submitting = useRef(false);
   const { theme, setTheme } = useTheme();
-  const dirty = draft.newWordsPerDay !== String(settings.newWordsPerDay) || draft.reviewsPerDay !== String(settings.reviewsPerDay) || draft.quizLength !== String(settings.quizLength) || draft.preferredLevel !== settings.preferredLevel || draft.voiceAccent !== settings.voiceAccent || draft.speechRate !== String(settings.speechRate);
+  const dirty = draft.newWordsPerDay !== String(settings.newWordsPerDay) || draft.reviewsPerDay !== String(settings.reviewsPerDay) || draft.quizLength !== String(settings.quizLength) || draft.preferredLevel !== settings.preferredLevel || draft.voiceAccent !== settings.voiceAccent || draft.speechRate !== String(settings.speechRate) || draft.autoSpeak !== initialAutoSpeak;
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,7 +33,7 @@ export function Preferences({ settings, busy, runOperation }: { settings: Settin
     submitting.current = true;
     setError(null);
     try {
-      const value = settingsSchema.parse({ id: "preferences", ...draft, newWordsPerDay: Number(draft.newWordsPerDay), reviewsPerDay: Number(draft.reviewsPerDay), quizLength: Number(draft.quizLength), speechRate: Number(draft.speechRate) });
+      const value = settingsSchema.parse({ id: "preferences", ...draft, newWordsPerDay: Number(draft.newWordsPerDay), reviewsPerDay: Number(draft.reviewsPerDay), quizLength: Number(draft.quizLength), speechRate: Number(draft.speechRate), autoSpeak: draft.autoSpeak });
       await runOperation("Tercihlerin kaydediliyor…", () => repository.saveSettings(value));
       toast.success("Öğrenme tercihlerin bu tarayıcıya kaydedildi.");
     } catch (cause) {
@@ -61,6 +64,19 @@ export function Preferences({ settings, busy, runOperation }: { settings: Settin
           <div className="grid gap-5 sm:grid-cols-2">
             <div className="space-y-2.5"><Label htmlFor="voiceAccent" className="text-xs">İngilizce aksanı</Label><select id="voiceAccent" name="voiceAccent" className={selectClass} value={draft.voiceAccent} onChange={event => setDraft(previous => ({ ...previous, voiceAccent: event.target.value as Settings["voiceAccent"] }))}><option value="en-GB">Britanya İngilizcesi · en-GB</option><option value="en-US">Amerikan İngilizcesi · en-US</option></select></div>
             <div className="space-y-2.5"><Label htmlFor="speechRate" className="text-xs">Konuşma hızı</Label><Input id="speechRate" name="speechRate" type="number" min={0.5} max={1.5} step={0.05} required value={draft.speechRate} onChange={event => setDraft(previous => ({ ...previous, speechRate: event.target.value }))} aria-describedby="speechRate-help" className="h-11 rounded-xl bg-background px-3 tabular-nums" /><p id="speechRate-help" className="text-[10px] text-muted-foreground">0,5–1,5× · 1× doğal hız</p></div>
+          </div>
+          <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border bg-background/80 px-4 py-3">
+            <div className="min-w-0 space-y-1">
+              <Label htmlFor="autoSpeak" className="cursor-pointer text-xs font-medium leading-snug">Yeni kart açıldığında telaffuzu otomatik seslendir</Label>
+              <p id="autoSpeak-help" className="text-[10px] leading-relaxed text-muted-foreground">Öğrenme ve tekrar kartları açıldığında İngilizce kelimeyi otomatik olarak sesli okur.</p>
+            </div>
+            <Switch
+              id="autoSpeak"
+              checked={draft.autoSpeak}
+              onCheckedChange={checked => setDraft(previous => ({ ...previous, autoSpeak: checked }))}
+              disabled={busy}
+              aria-describedby="autoSpeak-help"
+            />
           </div>
           <p className="mt-4 text-[10px] leading-relaxed text-muted-foreground">Sesler cihazının tarayıcısına bağlıdır; seçilen aksan her cihazda bulunmayabilir. Bu tercihler tarayıcının sesli okuması içindir; varsa kayıtlı ses dosyası değişmez.</p>
         </div>

@@ -1,6 +1,8 @@
-import type { CefrLevel, QuizType, VocabularyWord } from "@/types";
+import { isDue } from "@/lib/learning/scheduler";
+import type { CefrLevel, QuizType, VocabularyWord, WordProgress } from "@/types";
 
 export type QuestionType = Exclude<QuizType, "mixed">;
+export type QuizPool = "all" | "learning" | "due" | "favorites" | "difficult";
 export interface QuizContext {
   sentence: string;
   translation?: string;
@@ -21,6 +23,9 @@ export interface QuizQuestion {
 export interface QuizFilter {
   level: CefrLevel | "all";
   listeningAvailable: boolean;
+  pool?: QuizPool;
+  progress?: readonly WordProgress[];
+  now?: Date;
 }
 export interface QuizConfig extends QuizFilter {
   type: QuizType;
@@ -49,6 +54,36 @@ export const QUIZ_LABELS: Record<QuizType, string> = {
   listening: "Dinleme · İngilizce yazılı",
   mixed: "Karma pratik",
 };
+export const QUIZ_POOLS: readonly QuizPool[] = ["all", "learning", "due", "favorites", "difficult"];
+export const QUIZ_POOL_LABELS: Record<QuizPool, string> = {
+  all: "Tüm kelimeler",
+  learning: "Öğreniliyor",
+  due: "Tekrar zamanı gelenler",
+  favorites: "Favorilerim",
+  difficult: "Zorlandıklarım",
+};
+
+export function filterPoolWordIds(
+  words: readonly VocabularyWord[],
+  progress: readonly WordProgress[],
+  pool: QuizPool,
+  now = new Date(),
+): Set<string> {
+  if (pool === "all") return new Set(words.filter(word => word.id).map(word => word.id));
+  const byId = new Map(progress.map(item => [item.wordId, item]));
+  const matched = new Set<string>();
+  for (const word of words) {
+    if (!word.id) continue;
+    const item = byId.get(word.id);
+    if (pool === "learning" && item?.status === "learning") matched.add(word.id);
+    else if (pool === "due" && isDue(item, now)) matched.add(word.id);
+    else if (pool === "favorites" && item?.favorite === true) matched.add(word.id);
+    else if (pool === "difficult" && item && (item.incorrectCount > 0 || (item.reviewCount > 0 && item.difficulty >= 0.55))) {
+      matched.add(word.id);
+    }
+  }
+  return matched;
+}
 
 export function normalizeTurkish(value: string): string {
   return value.normalize("NFC").toLocaleLowerCase("tr-TR")
@@ -160,23 +195,31 @@ function choices(target: PreparedWord, pool: PreparedWord[], turkish: boolean, s
   return undefined;
 }
 function prepareQuiz(words: readonly VocabularyWord[], filter: QuizFilter): PreparedQuiz {
-  const pool = prepareWords(words, filter.level);
-  // Index every known equivalent once. Re-normalizing the target translation inside
+  const levelPool = prepareWords(words, filter.level);
+  const pool = filter.pool ?? "all";
+  const allowedIds = pool === "all"
+    ? null
+    : filterPoolWordIds(levelPool.map(word => word.source), filter.progress ?? [], pool, filter.now);
+  const targetWords = allowedIds
+    ? levelPool.filter(word => allowedIds.has(word.source.id))
+    : levelPool;
+  const variants: PreparedQuiz["variants"] = new Map();
+  const availability: Record<QuizType, number> = {
+    "en-tr-choice": 0, "tr-en-choice": 0, blank: 0, sentence: 0,
+    "en-tr-write": 0, "tr-en-write": 0, listening: 0, mixed: 0,
+  };
+  if (!targetWords.length) return { words: targetWords, variants, availability };
+  // Index every known equivalent once across the level pool. Re-normalizing the target translation inside
   // a full-pool filter for each word makes initial setup quadratic and blocks the UI.
   const equivalentsByMeaning = new Map<string, string[]>();
-  for (const word of pool) {
+  for (const word of levelPool) {
     for (const meaning of word.meanings) {
       const equivalents = equivalentsByMeaning.get(meaning) ?? [];
       equivalents.push(word.source.word.trim());
       equivalentsByMeaning.set(meaning, equivalents);
     }
   }
-  const variants: PreparedQuiz["variants"] = new Map();
-  const availability: Record<QuizType, number> = {
-    "en-tr-choice": 0, "tr-en-choice": 0, blank: 0, sentence: 0,
-    "en-tr-write": 0, "tr-en-write": 0, listening: 0, mixed: 0,
-  };
-  for (const word of pool) {
+  for (const word of targetWords) {
     const wordText = word.source.word.trim();
     const base = { wordId: word.source.id, word: wordText,
       ...(word.context ? { context: word.context } : {}) };
@@ -190,9 +233,9 @@ function prepareQuiz(words: readonly VocabularyWord[], filter: QuizFilter): Prep
       const english = { ...base, answer: wordText, acceptedAnswers: englishAnswers, prompt: word.translations[0] };
       types["en-tr-write"] = { ...turkish, type: "en-tr-write" };
       types["tr-en-write"] = { ...english, type: "tr-en-write" };
-      const trOptions = choices(word, pool, true);
+      const trOptions = choices(word, levelPool, true);
       if (trOptions) types["en-tr-choice"] = { ...turkish, type: "en-tr-choice", options: trOptions };
-      const enOptions = choices(word, pool, false);
+      const enOptions = choices(word, levelPool, false);
       if (enOptions) types["tr-en-choice"] = { ...english, type: "tr-en-choice", options: enOptions };
     }
     if (word.context) {
@@ -200,7 +243,7 @@ function prepareQuiz(words: readonly VocabularyWord[], filter: QuizFilter): Prep
         prompt: maskWord(word.context.sentence, wordText),
         ...(word.context.translation || word.translations[0] ? { promptContext: word.context.translation ?? `Türkçe ipucu: ${word.translations[0]}` } : {}) };
       types.blank = { ...masked, type: "blank" };
-      const options = choices(word, pool, false, true);
+      const options = choices(word, levelPool, false, true);
       if (options) types.sentence = { ...masked, type: "sentence", options };
     }
     if (filter.listeningAvailable) {
@@ -213,7 +256,7 @@ function prepareQuiz(words: readonly VocabularyWord[], filter: QuizFilter): Prep
       variants.set(word.source.id, types);
     }
   }
-  return { words: pool, variants, availability };
+  return { words: targetWords, variants, availability };
 }
 export function getQuizAvailability(words: readonly VocabularyWord[], filter: QuizFilter): Record<QuizType, number> {
   return prepareQuiz(words, filter).availability;

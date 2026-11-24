@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="lexi-bg" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6f60de" />
+      <stop offset="55%" stop-color="#6152ce" />
+      <stop offset="100%" stop-color="#5143a9" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#lexi-bg)" />
+  <rect
+    x="14"
+    y="14"
+    width="484"
+    height="484"
+    rx="102"
+    stroke="#ffffff"
+    stroke-opacity="0.14"
+    stroke-width="4"
+  />
+  <path
+    d="M256 166c-28-24-70-36-118-36a16 16 0 0 0-16 16v184a16 16 0 0 0 16 16c48 0 90 12 118 36c28-24 70-36 118-36a16 16 0 0 0 16-16V146a16 16 0 0 0-16-16c-48 0-90 12-118 36Z"
+    fill="#fffefa"
+    fill-opacity="0.12"
+  />
+  <path
+    d="M256 166v216"
+    stroke="#fffefa"
+    stroke-width="24"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M256 166c-28-24-70-36-118-36a16 16 0 0 0-16 16v184a16 16 0 0 0 16 16c48 0 90 12 118 36"
+    stroke="#fffefa"
+    stroke-width="24"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M256 166c28-24 70-36 118-36a16 16 0 0 1 16 16v184a16 16 0 0 1-16 16c-48 0-90 12-118 36"
+    stroke="#fffefa"
+    stroke-width="24"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M164 216h48M164 268h48M300 216h48M300 268h34"
+    stroke="#e5dfff"
+    stroke-width="20"
+    stroke-linecap="round"
+  />
+</svg>

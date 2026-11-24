@@ -73,6 +73,7 @@ export interface Settings {
   preferredLevel: CefrLevel | "all";
   voiceAccent: "en-GB" | "en-US";
   speechRate: number;
+  autoSpeak?: boolean;
 }
 export interface DatasetMetadata {
   id: "dataset";
@@ -98,5 +99,6 @@ export interface Backup extends Snapshot {
 export const DEFAULT_SETTINGS: Settings = {
   id: "preferences", newWordsPerDay: 10, reviewsPerDay: 15,
   quizLength: 10, preferredLevel: "all", voiceAccent: "en-GB", speechRate: 0.85,
+  autoSpeak: false,
 };
 export const LEVELS: CefrLevel[] = ["A1", "A2", "B1", "B2"];

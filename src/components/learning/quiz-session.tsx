@@ -12,8 +12,9 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { recordQuizAnswer } from "@/lib/storage/repository";
 import {
-  generateQuiz, getQuizAvailability, gradeAnswer, QUESTION_TYPES, QUIZ_LABELS,
-  type QuizGeneration, type QuizQuestion,
+  filterPoolWordIds, generateQuiz, getQuizAvailability, gradeAnswer,
+  QUESTION_TYPES, QUIZ_LABELS, QUIZ_POOL_LABELS, QUIZ_POOLS,
+  type QuizGeneration, type QuizPool, type QuizQuestion,
 } from "@/lib/quiz";
 import { LEVELS, type QuizAnswer, type QuizResult, type QuizType, type Settings, type Snapshot } from "@/types";
 
@@ -125,6 +126,7 @@ export function QuizSession({ data }: { data: Snapshot }) {
   const [type, setType] = useState<QuizType>("mixed");
   const [length, setLength] = useState(Math.min(50, Math.max(1, data.settings.quizLength)));
   const [level, setLevel] = useState<Settings["preferredLevel"]>(data.settings.preferredLevel);
+  const [pool, setPool] = useState<QuizPool>("all");
   const [session, setSession] = useState<Session | null>(null);
   const sessionRef = useRef<Session | null>(null);
   // This lock is set before any await or render, and held until feedback is advanced.
@@ -138,7 +140,20 @@ export function QuizSession({ data }: { data: Snapshot }) {
   const nextButton = useRef<HTMLButtonElement>(null);
   const status = useSyncExternalStore(subscribeToSpeech, speechStatus, serverSpeechStatus);
   const listeningAvailable = status === "ready";
-  const availability = useMemo(() => getQuizAvailability(data.vocabulary, { level, listeningAvailable }), [data.vocabulary, level, listeningAvailable]);
+  const levelWords = useMemo(
+    () => level === "all" ? data.vocabulary : data.vocabulary.filter(word => word.cefrLevel === level),
+    [data.vocabulary, level],
+  );
+  const poolCounts = useMemo(() => {
+    const now = new Date();
+    return Object.fromEntries(
+      QUIZ_POOLS.map(item => [item, filterPoolWordIds(levelWords, data.progress, item, now).size]),
+    ) as Record<QuizPool, number>;
+  }, [levelWords, data.progress]);
+  const availability = useMemo(
+    () => getQuizAvailability(data.vocabulary, { level, pool, progress: data.progress, listeningAvailable }),
+    [data.vocabulary, data.progress, level, pool, listeningAvailable],
+  );
   const question = session && !session.finished ? session.generation.questions[session.index] : null;
   useEffect(() => {
     if (!question) return;
@@ -155,9 +170,11 @@ export function QuizSession({ data }: { data: Snapshot }) {
     setStartError(null);
     try {
       const id = crypto.randomUUID();
-      const generation = generateQuiz(data.vocabulary, { type, length, level, listeningAvailable, sessionId: id, seed: id });
+      const generation = generateQuiz(data.vocabulary, {
+        type, length, level, pool, progress: data.progress, listeningAvailable, sessionId: id, seed: id,
+      });
       if (!generation.questions.length) {
-        setStartError("Bu ayarlarla uygun soru bulunamadı. Türü veya seviyeyi değiştir; anlam ve örnek cümleleri kütüphaneden tamamlayabilirsin.");
+        setStartError("Bu ayarlarla uygun soru bulunamadı. Türü, seviyeyi veya kelime havuzunu değiştir; anlam ve örnek cümleleri kütüphaneden tamamlayabilirsin.");
         return;
       }
       busy.current = false;
@@ -329,7 +346,7 @@ export function QuizSession({ data }: { data: Snapshot }) {
     </header>
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <section className="surface p-6 md:p-8">
-        <fieldset><legend className="text-lg font-semibold">Nasıl pratik yapmak istersin?</legend><p className="mb-6 mt-2 text-sm text-muted-foreground">Her türün altında, seçili seviyede uygun olan farklı kelime sayısı var.</p>
+        <fieldset><legend className="text-lg font-semibold">Nasıl pratik yapmak istersin?</legend><p className="mb-6 mt-2 text-sm text-muted-foreground">Her türün altında, seçili seviye ve havuzda uygun olan farklı kelime sayısı var.</p>
           <div className="grid gap-3 md:grid-cols-2">
             {MODES.map(({ type: mode, icon: Icon, description }) => {
               const count = availability[mode];
@@ -346,13 +363,14 @@ export function QuizSession({ data }: { data: Snapshot }) {
         <section className="surface learning-focus p-6">
           <p className="eyebrow">Kendi ritmini seç</p><h2 className="mt-2 text-lg font-semibold">Pratik planın</h2>
           <div className="mt-6 space-y-5">
+            <SettingSelect id="quiz-pool" label="Kelime havuzu" value={pool} onChange={value => { setPool(value as QuizPool); setStartError(null); }}>{QUIZ_POOLS.map(item => <SelectItem key={item} value={item}>{QUIZ_POOL_LABELS[item]} ({poolCounts[item].toLocaleString("tr-TR")})</SelectItem>)}</SettingSelect>
             <SettingSelect id="quiz-level" label="Kelime seviyesi" value={level} onChange={value => { setLevel(value as Settings["preferredLevel"]); setStartError(null); }}><SelectItem value="all">Tüm seviyeler</SelectItem>{LEVELS.map(item => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SettingSelect>
             <SettingSelect id="quiz-length" label="Soru sayısı" value={String(length)} onChange={value => setLength(Number(value))}>{lengthOptions.map(item => <SelectItem key={item} value={String(item)}>{item} soru</SelectItem>)}</SettingSelect>
           </div>
           <div className="mt-6 rounded-xl border bg-card/80 p-4"><p className="text-sm font-medium">{Math.min(length, currentAvailability)} farklı kelimeyle pratik</p><p className="mt-2 text-xs leading-relaxed text-muted-foreground">{currentAvailability < length ? `${length} soru istedin; seçili ayarlarda yalnızca ${currentAvailability} uygun kelime var. Tekrar soru veya başka türe gizli geçiş yapılmaz.` : "Aynı kelime iki kez sorulmaz. Yanıtlar tek tek kaydedilir."}</p></div>
           <Button onClick={start} disabled={!currentAvailability} className="mt-5 h-12 w-full rounded-xl">Pratiğe başla <ArrowRight /></Button>
           {startError && <p role="alert" className="mt-4 text-sm text-destructive">{startError}</p>}
-          {!currentAvailability && <p role="status" className="mt-4 text-xs leading-relaxed text-muted-foreground">Türü veya seviyeyi değiştir. Anlam ve gerçek örnek cümleleri kütüphaneden tamamlayabilirsin.</p>}
+          {!currentAvailability && <p role="status" className="mt-4 text-xs leading-relaxed text-muted-foreground">Türü, seviyeyi veya kelime havuzunu değiştir. Anlam ve gerçek örnek cümleleri kütüphaneden tamamlayabilirsin.</p>}
         </section>
         <section className="rounded-2xl border px-5 py-5 text-xs leading-relaxed text-muted-foreground">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground"><ShieldCheck className="size-4 text-primary" /> Yalnızca gerçek verilerinle</h2>

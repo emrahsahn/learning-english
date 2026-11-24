@@ -4,12 +4,13 @@ import { WordSensesList } from "@/components/vocabulary/word-senses";
 
 import Link from "next/link";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { ArrowRight, BookOpen, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, Flag, Loader2, RotateCcw, Sparkles, Target } from "lucide-react";
+import { ArrowRight, Bookmark, BookOpen, CalendarClock, Check, CheckCircle2, ChevronRight, Clock3, Eye, Flag, Loader2, RotateCcw, Sparkles, Target } from "lucide-react";
+import { toast } from "sonner";
 import { EmptyDataset, LoadingState, StorageError } from "@/components/data-boundary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { PronunciationButton } from "@/components/vocabulary/pronunciation-button";
+import { PronunciationButton, type PronunciationButtonHandle } from "@/components/vocabulary/pronunciation-button";
 import { formatReviewDate, partOfSpeechLabel } from "@/components/vocabulary/word-detail";
 import { buildSession, dailyCounts, isDue } from "@/lib/learning/scheduler";
 import { repository, useLearningData } from "@/lib/storage/repository";
@@ -102,6 +103,17 @@ function ActiveSession({ mode, snapshot, onRestart }: { mode: Mode; snapshot: Sn
         <div className="space-y-5">
           <div className="space-y-3"><div className="flex items-center justify-between gap-3 text-sm"><p className="font-medium">Kelime {index + 1} <span className="font-normal text-muted-foreground">/ {plan.words.length}</span></p><p className="text-xs text-muted-foreground" role="status" aria-live="polite">{savedRatings.length} kaydedildi{skippedIds.length > 0 ? ` · ${skippedIds.length} değerlendirilmedi` : ""}</p></div><Progress value={(completedCards / plan.words.length) * 100} className="h-1.5" aria-label="Oturumda tamamlanan kartlar" /></div>
           <LearningCard key={`${index}:${word.id}`} word={word} progress={progressMap.get(word.id)} settings={snapshot.settings} mode={mode} lastCard={index === plan.words.length - 1} onSaved={onSaved} onAdvance={skipped => { if (skipped) setSkippedIds(previous => previous.includes(word.id) ? previous : [...previous, word.id]); setIndex(index + 1); }} />
+          <div className="hidden flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground sm:flex" aria-label="Klavye kısayolları">
+            <span><kbd className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">Boşluk</kbd>: Aç/Geç</span>
+            <span aria-hidden="true">·</span>
+            <span><kbd className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">1-3</kbd>: Değerlendir</span>
+            <span aria-hidden="true">·</span>
+            <span><kbd className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">F</kbd>: Favori</span>
+            <span aria-hidden="true">·</span>
+            <span><kbd className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">S</kbd>: Dinle</span>
+            <span aria-hidden="true">·</span>
+            <span><kbd className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">H</kbd>: İpucu</span>
+          </div>
           <p className="flex items-center justify-center gap-2 text-center text-xs leading-relaxed text-muted-foreground"><CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />Kaydedilmeden kart ilerlemez. Türkçe anlamı olmayan kartlar değerlendirilmeden geçilebilir.</p>
         </div>
       ) : null}
@@ -132,17 +144,39 @@ function LearningCard({ word, progress, settings, mode, lastCard, onSaved, onAdv
   const [revealed, setRevealed] = useState(false);
   const [hintOpen, setHintOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [saved, setSaved] = useState<Rating | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attemptedRating, setAttemptedRating] = useState<Rating | null>(null);
   const busyRef = useRef(false);
+  const favoriteBusyRef = useRef(false);
   const savedRef = useRef(false);
   const advancingRef = useRef(false);
   const eventIdRef = useRef<string | null>(null);
   const attemptedRatingRef = useRef<Rating | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const pronunciationRef = useRef<PronunciationButtonHandle | null>(null);
   const meaningId = useId();
   const hasMeaning = !!word.turkishMeaning.trim();
+  const hasHint = Boolean(word.exampleSentence?.trim() || (word.senses?.length ?? 0) > 0);
+  const favorite = progress?.favorite ?? false;
+
+  const toggleFavorite = useCallback(async () => {
+    if (favoriteBusyRef.current) return;
+    favoriteBusyRef.current = true;
+    setFavoriteBusy(true);
+    const nextFavorite = !favorite;
+    try {
+      await repository.toggleFavorite(word.id);
+      toast.success(nextFavorite ? "Favorilere eklendi." : "Favorilerden çıkarıldı.");
+    } catch (reason) {
+      const detail = reason instanceof Error ? reason.message : "Favori kaydedilemedi. Yeniden deneyin.";
+      toast.error(detail);
+    } finally {
+      favoriteBusyRef.current = false;
+      setFavoriteBusy(false);
+    }
+  }, [favorite, word.id]);
 
   const rate = useCallback(async (rating: Rating) => {
     if (!revealed || !hasMeaning || busyRef.current || savedRef.current || advancingRef.current) return;
@@ -168,33 +202,92 @@ function LearningCard({ word, progress, settings, mode, lastCard, onSaved, onAdv
     }
   }, [revealed, hasMeaning, word.id, mode, onSaved]);
 
+  const advance = useCallback(() => {
+    if (busyRef.current || advancingRef.current || (!savedRef.current && (!revealed || hasMeaning))) return;
+    advancingRef.current = true;
+    onAdvance(!savedRef.current);
+  }, [revealed, hasMeaning, onAdvance]);
+
   useEffect(() => { headingRef.current?.focus({ preventScroll: true }); }, []);
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
       const element = event.target instanceof Element ? event.target : null;
-      if (element?.closest("input, textarea, select, button, a, [contenteditable]:not([contenteditable='false']), [role='combobox'], [role='dialog']")) return;
+      if (element?.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='combobox'], [role='dialog']")) return;
+      const isInteractiveTarget = !!element?.closest("button, a, [role='button'], [role='link']");
+
+      if ((event.key === " " || event.code === "Space" || event.key === "Enter") && !event.shiftKey) {
+        if (isInteractiveTarget) return;
+        if (!revealed) {
+          event.preventDefault();
+          setRevealed(true);
+          return;
+        }
+        if ((savedRef.current || !hasMeaning) && !busyRef.current && !advancingRef.current) {
+          event.preventDefault();
+          advance();
+        }
+        return;
+      }
+
       const option = RATING_OPTIONS.find(item => item.key === event.key);
-      if (option && revealed && hasMeaning && !busyRef.current && !savedRef.current) {
+      if (option && !event.shiftKey && revealed && hasMeaning && !busyRef.current && !savedRef.current) {
         event.preventDefault();
         void rate(option.value);
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "f") {
+        event.preventDefault();
+        void toggleFavorite();
+        return;
+      }
+      if (key === "s" || key === "r") {
+        event.preventDefault();
+        pronunciationRef.current?.speak();
+        return;
+      }
+      if (key === "h" && !revealed && hasHint) {
+        event.preventDefault();
+        setHintOpen(prev => !prev);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [rate, revealed, hasMeaning]);
-
-  function advance() {
-    if (busyRef.current || advancingRef.current || (!savedRef.current && (!revealed || hasMeaning))) return;
-    advancingRef.current = true;
-    onAdvance(!savedRef.current);
-  }
+  }, [rate, revealed, hasMeaning, hasHint, advance, toggleFavorite]);
 
   return (
     <section className="animate-in overflow-hidden rounded-3xl border bg-card shadow-sm fade-in slide-in-from-bottom-3 duration-300 motion-reduce:animate-none" aria-labelledby={meaningId + "-word"}>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-4 sm:px-8"><div className="flex flex-wrap items-center gap-2"><Badge className="h-6 bg-primary/10 px-3 text-primary">{word.cefrLevel}</Badge><Badge variant="outline" className="h-6">{partOfSpeechLabel(word.partOfSpeech)}</Badge></div><span className="text-xs text-muted-foreground">{mode === "learn" ? "Yeni kelime" : `${progress?.reviewCount ?? 0} değerlendirme`}</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-4 sm:px-8">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className="h-6 bg-primary/10 px-3 text-primary">{word.cefrLevel}</Badge>
+          <Badge variant="outline" className="h-6">{partOfSpeechLabel(word.partOfSpeech)}</Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{mode === "learn" ? "Yeni kelime" : `${progress?.reviewCount ?? 0} değerlendirme`}</span>
+          <Button
+            type="button"
+            variant={favorite ? "secondary" : "ghost"}
+            size="sm"
+            className="h-8 gap-1.5 rounded-lg px-2.5 text-xs"
+            aria-pressed={favorite}
+            aria-label={favorite ? "Favorilerden çıkar" : "Favorilere ekle"}
+            title={favorite ? "Favorilerden çıkar (F)" : "Favorilere ekle (F)"}
+            disabled={favoriteBusy}
+            onClick={() => void toggleFavorite()}
+          >
+            {favoriteBusy ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Bookmark className={`size-3.5 ${favorite ? "fill-primary text-primary" : ""}`} aria-hidden="true" />
+            )}
+            <span className="hidden sm:inline">{favorite ? "Favori" : "Favorile"}</span>
+          </Button>
+        </div>
+      </div>
       <div className="px-6 py-9 sm:px-10 sm:py-12">
-        <div className="flex flex-col items-center text-center"><p className="mb-4 text-xs font-semibold tracking-widest text-muted-foreground uppercase">İngilizce</p><h2 id={meaningId + "-word"} ref={headingRef} tabIndex={-1} lang="en" className="max-w-full break-words font-heading text-4xl font-semibold tracking-tight outline-none sm:text-6xl">{word.word}</h2><p lang="en" className="mt-4 font-mono text-sm text-muted-foreground">{word.pronunciation.trim() || "IPA telaffuz bilgisi eklenmemiş"}</p><div className="mt-5 flex items-center gap-3"><PronunciationButton word={word.word} audioUrl={word.audioUrl} settings={settings} className="size-12 rounded-2xl border-primary/20 bg-primary/5 text-primary" /><span className="text-xs text-muted-foreground">Telaffuzu dinle</span></div></div>
+        <div className="flex flex-col items-center text-center"><p className="mb-4 text-xs font-semibold tracking-widest text-muted-foreground uppercase">İngilizce</p><h2 id={meaningId + "-word"} ref={headingRef} tabIndex={-1} lang="en" className="max-w-full break-words font-heading text-4xl font-semibold tracking-tight outline-none sm:text-6xl">{word.word}</h2><p lang="en" className="mt-4 font-mono text-sm text-muted-foreground">{word.pronunciation.trim() || "IPA telaffuz bilgisi eklenmemiş"}</p><div className="mt-5 flex items-center gap-3"><PronunciationButton ref={pronunciationRef} word={word.word} audioUrl={word.audioUrl} settings={settings} autoPlay={!!settings.autoSpeak} className="size-12 rounded-2xl border-primary/20 bg-primary/5 text-primary" /><span className="text-xs text-muted-foreground">Telaffuzu dinle</span></div></div>
         {mode === "review" && <dl className="mt-7 grid gap-3 rounded-2xl bg-muted/30 p-4 text-xs sm:grid-cols-2"><div><dt className="text-muted-foreground">Son çalışma</dt><dd className="mt-1 font-medium">{progress?.lastReviewDate ? formatReviewDate(progress.lastReviewDate) : "Henüz çalışılmadı"}</dd></div><div><dt className="text-muted-foreground">Planlanan tekrar</dt><dd className="mt-1 font-medium">{formatReviewDate(progress?.nextReviewDate)}</dd></div></dl>}
 
         {!revealed ? (
